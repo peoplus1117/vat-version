@@ -37,9 +37,9 @@ def get_reg_cost(bid_price, p_type):
         else: return 0
 
 # -----------------------------------------------------------
-# 3. 메인 앱 (V36-VAT: 프리랜서 13.3% 세금 + 상품화 부가세 10% 지출)
+# 3. 메인 앱
 # -----------------------------------------------------------
-def smart_purchase_calculator_v36_vat_final():
+def smart_purchase_calculator_v36_vat_v14():
     st.set_page_config(page_title="매입견적서 V36-VAT by 김희주", layout="wide")
     
     st.markdown("""
@@ -87,24 +87,29 @@ def smart_purchase_calculator_v36_vat_final():
 
     with left_col:
         st.markdown("<div class='section-header'>상품화 비용 입력 (세전 입력)</div>", unsafe_allow_html=True)
+        st.caption("※ 비용/입찰가 입력 팁: 17 입력시 → 170,000원 / 3500 입력시 → 3,500만원")
+        
+        COST_AD = 270000 
+        COST_DEPOSIT = 60000 # 비과세
+        COST_POLISH_VAT = int(120000 * 1.1)
+
         raw_check = st.radio("성능점검비 (VAT포함 기준)", [44000, 66000], horizontal=True)
-        in_transport = st.selectbox("교통비 (공급가)", [30000, 50000, 80000, 130000, 170000, 200000])
+        # 교통비 비과세 반영
+        cost_transport = st.selectbox("교통비 (비과세)", [30000, 50000, 80000, 130000, 170000, 200000])
         
         in_dent = st.number_input("판금/도색 (공급가)", step=10000, format="%d", key='cost_dent', on_change=smart_unit_converter, args=('cost_dent',))
         in_wheel = st.number_input("휠/타이어 (공급가)", step=10000, format="%d", key='cost_wheel', on_change=smart_unit_converter, args=('cost_wheel',))
         in_etc = st.number_input("기타비용 (공급가)", step=10000, format="%d", key='cost_etc', on_change=smart_unit_converter, args=('cost_etc',))
 
-        # 모든 공급가 입력값에 부가세 10% 강제 가산 (프리랜서 보수적 원가)
-        COST_AD = 270000 
-        COST_POLISH = 132000 
-        COST_DEPOSIT = 60000
-        total_prep_vat = int((in_transport + in_dent + in_wheel + in_etc) * 1.1) + raw_check + COST_AD + COST_POLISH + COST_DEPOSIT
-        st.caption(f"※ 광고, 광택 등 모든 항목 부가세 10% 포함 지출로 계산됨")
+        cost_dent_vat = int(in_dent * 1.1)
+        cost_wheel_vat = int(in_wheel * 1.1)
+        cost_etc_vat = int(in_etc * 1.1)
 
-    # -----------------------------------------------------------
-    # [V36 가이드 로직: 5.5% 마진]
-    # -----------------------------------------------------------
-    budget_after_margin = int(sales_price * 0.945) # 5.5% 마진 확보선
+        # 총 상품화 지출 (교통비와 입금비는 1.1 곱하지 않음)
+        total_prep_vat = cost_transport + cost_dent_vat + cost_wheel_vat + cost_etc_vat + raw_check + COST_AD + COST_POLISH_VAT + COST_DEPOSIT
+        st.caption(f"※ 광고(27만), 광택(13.2만), 입금(6만, 비과세), 교통비(비과세) 포함")
+
+    budget_after_margin = int(sales_price * 0.955) # 4.5% 마진
     guide_bid = 0
     start_point = budget_after_margin - total_prep_vat
     
@@ -129,27 +134,19 @@ def smart_purchase_calculator_v36_vat_final():
         st.markdown(f"<div class='big-price'>{guide_bid:,} 원</div>", unsafe_allow_html=True)
         st.write("")
         my_bid = st.number_input("입찰가 입력", step=10000, format="%d", label_visibility="collapsed", key='my_bid_input', on_change=smart_unit_converter, args=('my_bid_input',))
-        
-        bid_ratio = (my_bid / sales_price) * 100 if sales_price > 0 else 0
-        st.markdown(f"<div class='input-check' style='text-align:right;'>확인: ({bid_ratio:.1f}%) {my_bid:,} 원</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # 결과 계산 (V36 세금 로직 적용)
     res_fee = get_auction_fee(my_bid, p_route)
     res_reg = get_reg_cost(my_bid, p_type)
     res_interest = int(my_bid * 0.01)
     
-    # 1. 부가세 10% 수익 분리
     gross_margin = sales_price - my_bid - (raw_check + COST_AD + res_fee)
     dealer_income = int(gross_margin / 1.1)
-    
-    # 2. 프리랜서 원천세 3.3% 차감
     tax_base = dealer_income - res_reg
     tax_33 = int(tax_base * 0.033) if tax_base > 0 else 0
     
-    # 최종 실소득 (모든 부가세 지출 포함)
-    real_income = dealer_income - (int((in_transport + in_dent + in_wheel + in_etc) * 1.1) + COST_POLISH + COST_DEPOSIT + res_reg + res_interest + tax_33)
+    real_income = dealer_income - (cost_transport + cost_dent_vat + cost_wheel_vat + cost_etc_vat + COST_POLISH_VAT + COST_DEPOSIT + res_reg + res_interest + tax_33)
     real_margin_rate = (real_income / my_bid * 100) if my_bid > 0 else 0
     total_cost = my_bid + total_prep_vat + res_reg + res_interest
 
@@ -161,17 +158,44 @@ def smart_purchase_calculator_v36_vat_final():
         st.markdown("<div style='text-align:center;'>예상 이익률 (매입가 대비)</div>", unsafe_allow_html=True)
         st.markdown(f"<div style='text-align:center;' class='margin-rate'>{real_margin_rate:.2f} %</div>", unsafe_allow_html=True)
 
-    with st.expander("🧾 상세 내역 (복사 전용)", expanded=True):
-        copy_text = f"""판매가   : {sales_price:,} 원
+    with st.expander("🧾 상세 견적 및 복사 (펼치기)", expanded=True):
+        d_col1, d_col2 = st.columns([1, 1], gap="medium")
+        with d_col1:
+            st.caption("▼ 상세 내역 (확인용)")
+            st.markdown(f"""
+            <div class='detail-table-container'>
+                <table class='detail-table'>
+                    <tr><td class='detail-label'>판매가</td><td class='detail-value'>{sales_price:,} 원</td></tr>
+                    <tr><td class='detail-label'>매입가</td><td class='detail-value' style='color:#4dabf7;'>{my_bid:,} 원</td></tr>
+                    <tr><td class='detail-label'>총 소요원가</td><td class='detail-value' style='color:#aaa;'>{total_cost:,} 원</td></tr>
+                    <tr><td colspan='2' style='height:8px; border-bottom:1px dashed #777;'></td></tr>
+                    <tr><td class='detail-label'>예상이익률</td><td class='detail-value' style='color:#ff6b6b;'>{real_margin_rate:.2f} %</td></tr>
+                    <tr><td class='detail-label'>실소득액</td><td class='detail-value'>{real_income:,} 원</td></tr>
+                    <tr><td colspan='2' style='height:8px; border-bottom:1px dashed #777;'></td></tr>
+                    <tr><td class='detail-label'>교통비(비과세)</td><td class='detail-value'>{cost_transport:,} 원</td></tr>
+                    <tr><td class='detail-label'>판금/도색(VAT포함)</td><td class='detail-value'>{cost_dent_vat:,} 원</td></tr>
+                    <tr><td class='detail-label'>휠/타이어(VAT포함)</td><td class='detail-value'>{cost_wheel_vat:,} 원</td></tr>
+                    <tr><td class='detail-label'>기타비용(VAT포함)</td><td class='detail-value'>{cost_etc_vat:,} 원</td></tr>
+                    <tr><td class='detail-label'>매입등록비</td><td class='detail-value'>{res_reg:,} 원</td></tr>
+                    <tr><td class='detail-label'>낙찰수수료</td><td class='detail-value'>{res_fee:,} 원</td></tr>
+                </table>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with d_col2:
+            st.caption("▼ 복사 전용 텍스트 (금융이자 제외)")
+            copy_text = f"""판매가   : {sales_price:,} 원
 매입가   : {my_bid:,} 원
-실소득(세후) : {real_income:,} 원
 예상이익률 : {real_margin_rate:.2f} %
+실소득액  : {real_income:,} 원
 -------------------------
-상품화(VAT포함) : {total_prep_vat:,} 원
+교통비    : {cost_transport:,} 원
+판금/도색  : {cost_dent_vat:,} 원
+휠/타이어  : {cost_wheel_vat:,} 원
+기타비용   : {cost_etc_vat:,} 원
 매입등록비 : {res_reg:,} 원
-낙찰수수료 : {res_fee:,} 원
-금융이자(1.0%) : {res_interest:,} 원"""
-        st.code(copy_text, language="text")
+낙찰수수료 : {res_fee:,} 원"""
+            st.code(copy_text, language="text")
 
 if __name__ == "__main__":
-    smart_purchase_calculator_v36_vat_final()
+    smart_purchase_calculator_v36_vat_v14()
