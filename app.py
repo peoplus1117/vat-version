@@ -37,9 +37,9 @@ def get_reg_cost(bid_price, p_type):
         else: return 0
 
 # -----------------------------------------------------------
-# 3. 메인 앱 (V36-VAT: 프리랜서 세금 13.3% + 상품화 부가세 10% 지출)
+# 3. 메인 앱 (V36-VAT: 프리랜서 13.3% 세금 + 상품화 부가세 10% 지출)
 # -----------------------------------------------------------
-def smart_purchase_calculator_v36_vat():
+def smart_purchase_calculator_v36_vat_final():
     st.set_page_config(page_title="매입견적서 V36-VAT by 김희주", layout="wide")
     
     st.markdown("""
@@ -61,10 +61,6 @@ def smart_purchase_calculator_v36_vat():
     </style>
     """, unsafe_allow_html=True)
 
-    if 'p_type' not in st.session_state: st.session_state['p_type'] = "개인"
-    if 'p_route' not in st.session_state: st.session_state['p_route'] = "셀프"
-    if 't_cost' not in st.session_state: st.session_state['t_cost'] = 30000
-    if 'check_cost' not in st.session_state: st.session_state['check_cost'] = 66000
     if 'cost_dent' not in st.session_state: st.session_state['cost_dent'] = 0
     if 'cost_wheel' not in st.session_state: st.session_state['cost_wheel'] = 0
     if 'cost_etc' not in st.session_state: st.session_state['cost_etc'] = 0
@@ -75,62 +71,51 @@ def smart_purchase_calculator_v36_vat():
 
     st.title("매입견적서 V36-VAT by 김희주")
 
-    # Step 1. 상단 정보
     col1, col2, col3 = st.columns([1.5, 1, 1])
     with col1:
         sales_input = st.number_input("판매 예정가 (단위: 만원)", value=3500, step=10, format="%d")
         sales_price = sales_input * 10000
         st.markdown(f"<div class='input-check'>확인: {sales_price:,} 원</div>", unsafe_allow_html=True)
     with col2:
-        p_type = st.radio("매입유형", ["개인", "사업자"], key='p_type')
+        p_type = st.radio("매입유형", ["개인", "사업자"])
     with col3:
-        p_route = st.selectbox("매입루트", ["셀프", "제로", "개인거래"], key='p_route')
+        p_route = st.selectbox("매입루트", ["셀프", "제로", "개인거래"])
 
     st.markdown("---")
 
-    # Step 2. 메인 입력
     left_col, right_col = st.columns([1, 1], gap="large")
 
     with left_col:
         st.markdown("<div class='section-header'>상품화 비용 입력 (세전 입력)</div>", unsafe_allow_html=True)
-        # 선택한 금액에 부가세 10% 자동 가산
-        raw_check = st.radio("성능점검비 (VAT별도)", [40000, 60000], key='check_cost_raw', horizontal=True)
-        cost_perf = int(raw_check * 1.1)
+        raw_check = st.radio("성능점검비 (VAT포함 기준)", [44000, 66000], horizontal=True)
+        in_transport = st.selectbox("교통비 (공급가)", [30000, 50000, 80000, 130000, 170000, 200000])
         
-        raw_transport = st.selectbox("교통비 (VAT별도)", [30000, 50000, 80000, 130000, 170000, 200000])
-        cost_transport = int(raw_transport * 1.1)
-        
-        cost_dent_raw = st.number_input("판금/도색 (별도)", step=10000, format="%d", key='cost_dent', on_change=smart_unit_converter, args=('cost_dent',))
-        cost_wheel_raw = st.number_input("휠/타이어 (별도)", step=10000, format="%d", key='cost_wheel', on_change=smart_unit_converter, args=('cost_wheel',))
-        cost_etc_raw = st.number_input("기타비용 (별도)", step=10000, format="%d", key='cost_etc', on_change=smart_unit_converter, args=('cost_etc',))
+        in_dent = st.number_input("판금/도색 (공급가)", step=10000, format="%d", key='cost_dent', on_change=smart_unit_converter, args=('cost_dent',))
+        in_wheel = st.number_input("휠/타이어 (공급가)", step=10000, format="%d", key='cost_wheel', on_change=smart_unit_converter, args=('cost_wheel',))
+        in_etc = st.number_input("기타비용 (공급가)", step=10000, format="%d", key='cost_etc', on_change=smart_unit_converter, args=('cost_etc',))
 
-        # 내부 계산용 부가세 합산
-        cost_repair_vat = int((cost_dent_raw + cost_wheel_raw + cost_etc_raw) * 1.1)
-        HIDDEN_AD = int(250000 * 1.1)
-        HIDDEN_POLISH = int(120000 * 1.1)
-        HIDDEN_DEPOSIT = 60000 # 입금비는 그대로 유지
-
-        total_fixed_vat = cost_perf + cost_transport + cost_repair_vat + HIDDEN_AD + HIDDEN_POLISH + HIDDEN_DEPOSIT
+        # 모든 공급가 입력값에 부가세 10% 강제 가산 (프리랜서 보수적 원가)
+        COST_AD = 270000 
+        COST_POLISH = 132000 
+        COST_DEPOSIT = 60000
+        total_prep_vat = int((in_transport + in_dent + in_wheel + in_etc) * 1.1) + raw_check + COST_AD + COST_POLISH + COST_DEPOSIT
         st.caption(f"※ 광고, 광택 등 모든 항목 부가세 10% 포함 지출로 계산됨")
 
-    # 가이드 계산 (V36 기준 5.5% 마진)
-    budget_after_55 = int(sales_price * 0.945)
+    # -----------------------------------------------------------
+    # [V36 가이드 로직: 5.5% 마진]
+    # -----------------------------------------------------------
+    budget_after_margin = int(sales_price * 0.945) # 5.5% 마진 확보선
     guide_bid = 0
-    start_point = budget_after_55 - total_fixed_vat
-    for bid in range(start_point, start_point - 5000000, -10000):
-        fee = get_auction_fee(bid, p_route)
-        reg = get_reg_cost(bid, p_type)
-        interest = int(bid * 0.01) # V36 금리 1% 유지
-        if (bid + total_fixed_vat + fee + reg + interest) <= budget_after_margin: # V36 로직
-            pass # 아래 로직으로 대체
+    start_point = budget_after_margin - total_prep_vat
     
-    # 가이드 계산 보정 (V36 오리지널 로직에 부가세 지출만 반영)
     for bid in range(start_point, start_point - 5000000, -10000):
         fee = get_auction_fee(bid, p_route)
         reg = get_reg_cost(bid, p_type)
-        if (bid + total_fixed_vat + fee + reg) <= budget_after_55:
+        interest = int(bid * 0.01) # V36 금리 1%
+        if (bid + total_prep_vat + fee + reg + interest) <= budget_after_margin:
             guide_bid = bid
             break
+            
     if guide_bid > 0: guide_bid = math.ceil(guide_bid / 10000) * 10000
 
     if 'prev_guide_bid' not in st.session_state: st.session_state['prev_guide_bid'] = -1
@@ -144,26 +129,29 @@ def smart_purchase_calculator_v36_vat():
         st.markdown(f"<div class='big-price'>{guide_bid:,} 원</div>", unsafe_allow_html=True)
         st.write("")
         my_bid = st.number_input("입찰가 입력", step=10000, format="%d", label_visibility="collapsed", key='my_bid_input', on_change=smart_unit_converter, args=('my_bid_input',))
+        
+        bid_ratio = (my_bid / sales_price) * 100 if sales_price > 0 else 0
+        st.markdown(f"<div class='input-check' style='text-align:right;'>확인: ({bid_ratio:.1f}%) {my_bid:,} 원</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # Step 3. V36 세금 로직 (13.3% 차감)
-    real_fee = get_auction_fee(my_bid, p_route)
-    real_reg = get_reg_cost(my_bid, p_type)
-    real_interest = int(my_bid * 0.01)
+    # 결과 계산 (V36 세금 로직 적용)
+    res_fee = get_auction_fee(my_bid, p_route)
+    res_reg = get_reg_cost(my_bid, p_type)
+    res_interest = int(my_bid * 0.01)
     
-    # 딜러 수익 부가세 10% 차감 로직
-    gross_margin = sales_price - my_bid - (cost_perf + HIDDEN_AD + real_fee)
+    # 1. 부가세 10% 수익 분리
+    gross_margin = sales_price - my_bid - (raw_check + COST_AD + res_fee)
     dealer_income = int(gross_margin / 1.1)
     
-    # 프리랜서 원천세 3.3% 차감 로직
-    tax_base = dealer_income - real_reg
+    # 2. 프리랜서 원천세 3.3% 차감
+    tax_base = dealer_income - res_reg
     tax_33 = int(tax_base * 0.033) if tax_base > 0 else 0
     
-    # 실소득 계산 (상품화 비용에 부가세가 다 포함된 상태로 차감)
-    real_income = dealer_income - (cost_transport + cost_repair_vat + HIDDEN_POLISH + HIDDEN_DEPOSIT + real_reg + real_interest + tax_33)
-    real_margin_rate = (real_income / my_bid) * 100 if my_bid > 0 else 0
-    total_cost = my_bid + total_fixed_vat + real_reg + real_interest
+    # 최종 실소득 (모든 부가세 지출 포함)
+    real_income = dealer_income - (int((in_transport + in_dent + in_wheel + in_etc) * 1.1) + COST_POLISH + COST_DEPOSIT + res_reg + res_interest + tax_33)
+    real_margin_rate = (real_income / my_bid * 100) if my_bid > 0 else 0
+    total_cost = my_bid + total_prep_vat + res_reg + res_interest
 
     c_final1, c_final2 = st.columns(2)
     with c_final1:
@@ -173,8 +161,17 @@ def smart_purchase_calculator_v36_vat():
         st.markdown("<div style='text-align:center;'>예상 이익률 (매입가 대비)</div>", unsafe_allow_html=True)
         st.markdown(f"<div style='text-align:center;' class='margin-rate'>{real_margin_rate:.2f} %</div>", unsafe_allow_html=True)
 
-    with st.expander("🧾 상세 견적 및 복사"):
-        st.code(f"판매가: {sales_price:,}원\n매입가: {my_bid:,}원\n실소득: {real_income:,}원\n이익률: {real_margin_rate:.2f}%", language="text")
+    with st.expander("🧾 상세 내역 (복사 전용)", expanded=True):
+        copy_text = f"""판매가   : {sales_price:,} 원
+매입가   : {my_bid:,} 원
+실소득(세후) : {real_income:,} 원
+예상이익률 : {real_margin_rate:.2f} %
+-------------------------
+상품화(VAT포함) : {total_prep_vat:,} 원
+매입등록비 : {res_reg:,} 원
+낙찰수수료 : {res_fee:,} 원
+금융이자(1.0%) : {res_interest:,} 원"""
+        st.code(copy_text, language="text")
 
 if __name__ == "__main__":
-    smart_purchase_calculator_v36_vat()
+    smart_purchase_calculator_v36_vat_final()
